@@ -1,0 +1,45 @@
+---
+title: "Tidy Tuesday - UN Votes"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+unvotes <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-23/unvotes.csv')
+roll_calls <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-23/roll_calls.csv')
+issues <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-23/issues.csv')
+
+```
+
+Get case numbers for votes relating to colonialism
+```{r}
+colonialism <- issues %>%
+  filter(issue == "Colonialism") %>%
+  pull(rcid)
+```
+
+Make custom colors for plot
+```{r}
+color_values <- c("#26001b", "#f14668", "#ffd880")
+```
+
+Highest concentration of NO votes on Colonialism resolutions goes to the US and UK. High concentraion of abstain votes in France.
+```{r}
+unvotes %>%
+  filter(rcid %in% colonialism) %>%
+  filter(country %in% c("United States", "United Kingdom",
+                        "China", "Russia", "France")) %>%
+  inner_join(roll_calls %>% select(rcid, date)) %>%
+  ggplot(aes(x = date, y = country, color = vote)) +
+  geom_jitter(shape = 16, size = 4, alpha = .7) +
+  scale_color_manual(values = color_values) +
+  labs(title = "UN votes on Issues pertaining to Colonialism",
+       subtitle = "Votes by UN Security Council Members", 
+       x = "", 
+       y = "",
+       color = "",
+       caption = "Data: Harvard Dataverse, Tidy Tuesday") +
+  theme(legend.position = "bottom")
+```
+
