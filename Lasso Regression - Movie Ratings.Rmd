@@ -1,0 +1,100 @@
+---
+title: "Predicting Overall Gross - Movie Data"
+author: "Devin"
+date: "5/31/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+data <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2018/2018-10-23/movie_profit.csv') %>% 
+  select(-X1)
+
+data
+```
+
+Does the age old saying "You gotta spend money to make money" hold when accounting for total gross of movies?
+
+Regression model shows production budget is a significant predictor of worldwide gross accounting for 43% of the variance in worldwide gross data but model diagnostics indicate non-normality of residuals and potential heterogeneity.
+```{r}
+budget_world <- lm(worldwide_gross ~ production_budget, data = data)
+
+summary(budget_world)
+
+broom::tidy(budget_world, conf.int = TRUE)
+
+performance::check_model(budget_world)
+```
+
+To address this we run two robust versions of the model, first a robust model with heterogeneity consistent standard error estimates (using the HC4 method) and second, a bootstrapped model with 10,000 iterations (Usually bootstrapping is used for low sample size and while this is a large data set it is small when making inferences about films in general). 
+
+Both models support the original coefficient estimate 2.65 and still show statistical significance with confidence intervals not including 0. 
+
+Thus for every increase in production budget by 1 we should see an increase in worldwide gross by 2.65. 
+```{r}
+parameters::parameters(budget_world, robust = T, vcov.type = "HC4")
+parameters::parameters(budget_world, bootstrap = T, iterations = 10000)
+```
+
+
+We do however have A LOT of other variables in this data set and could see if other features also predict worldwide gross. However instead of using step-wise regression we'll try out a LASSO model given the vast amount of coefficients we'd get by entering all features in the model (release year alone gives us well over 40 coefficients)
+
+First we create an x and y for our lasso model. For x we remove worldwide gross (our y) along with movie name(a non meaningful feature) 
+```{r}
+x <- data %>% 
+  drop_na() %>%
+  select(-c(worldwide_gross, movie)) %>%
+  data.matrix()
+
+y <- data %>%
+  drop_na() %>%
+  select(worldwide_gross) %>%
+  data.matrix()
+```
+
+We then build an intial lasso model using the glmnet function from the glmnet package and take a look at our coeffients
+```{r}
+lasso_model <- glmnet::glmnet(x,y)
+
+lasso_model %>%
+  broom::tidy()
+```
+
+In order to get a handle on all these estimates we'll build a cross validated version of the model using cv.glmnet and plot the model to see how how our much our mean squared error is reduced by each lambda
+```{r}
+cv_fit <- glmnet::cv.glmnet(x,y)
+plot(cv_fit)
+```
+
+Using conservative lambda production budget and domestic gross appear to be the useful predictors in our model when predicting worldwide gross.
+```{r}
+cv_fit$glmnet.fit %>%
+  broom::tidy() %>%
+  filter(lambda == cv_fit$lambda.1se,
+         term != "(Intercept)") %>%
+  arrange(desc(estimate))
+```
+
+Finally, let's return to our classical regression and add in domestic gross in our model. WOW! We've got a model that accounts for 88% of the variance with domestic gross an even stronger predictor of worldwide gross. Robust models also support this conclusion.
+```{r}
+budget_wolrd_improved <- lm(worldwide_gross ~ production_budget + domestic_gross, data = data)
+
+budget_wolrd_improved %>%
+  summary()
+
+budget_wolrd_improved %>%
+  broom::tidy(conf.int = TRUE)
+```
+
+```{r}
+performance::check_model(budget_wolrd_improved)
+```
+
+```{r}
+parameters::parameters(budget_wolrd_improved, robust = T, vcov.type = "HC4")
+parameters::parameters(budget_wolrd_improved, bootstrap = T, iterations = 10000)
+```
+
+
+Spend money to make money? In hollywood the answer is definitely yes but our analysis also shows that the money made domestically is a good predictor of how well a movie will do globally - at least with this data and for the time being.
